@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+  # Redis - persistent memory store (survives restarts)
+  redis:
+    image: redis:7-alpine
+    container_name: nevup-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data  # Persistent volume - survives docker compose restart
+    command: redis-server --save 60 1 --loglevel warning --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Trading Psychology Coach API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nevup-coach
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - ./nevup_seed_dataset.json:/app/nevup_seed_dataset.json:ro
+
+volumes:
+  redis_data:
+    driver: local  # Named volume persists across docker compose restart
